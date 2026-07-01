@@ -1,35 +1,45 @@
-# Nexus v1.0-pre-e2ee Release Notes
-
-Welcome to Nexus v1.0. This release serves as the stable pre-End-to-End Encryption milestone, capturing the full foundational feature set of our modern messaging ecosystem.
+# Nexus Release Notes
 
 ---
 
-## Key Features
+## Nexus v2.0 Phase 1
+*Release Date: July 1, 2026*
 
-### 1. Authentication & Security
-* **OTP Login**: Fully asynchronous phone authentication with dynamic OTP generation.
-* **Security PIN Unlock**: Access gateway protected by bcrypt PIN hashing and verified client-side.
+Welcome to the Nexus v2.0 Phase 1 milestone, completing the core Cryptographic Identity Infrastructure to lay the foundation for End-to-End Encryption (E2EE).
 
-### 2. Messaging & Group Operations
-* **Direct Messaging (DM)**: Real-time point-to-point text conversations with low latency.
-* **Group Chats**: Fully collaborative group channels supporting custom titles, member lists, and shared message feeds.
+### Completed Features
 
-### 3. Rich Media & Voice Notes
-* **Attachment Uploads**: Seamless media uploads with type-safe metadata mapping.
-* **Voice Notes**: Integrates client-side recording APIs, server metadata tracking (duration, size, mime-type), and interactive player bubbles.
+✅ **Device Registry**: Async device registration and multi-device identity binding.
+✅ **Identity Keys**: Long-term asymmetric key pair management client-side.
+✅ **Signed Pre-Keys**: Medium-term signature prekeys verifying identity authentication.
+✅ **One-Time Pre-Keys**: Managed pool of ephemeral session initiation prekeys.
+✅ **Device APIs**: Full REST route suite to register, fetch, list, and revoke device bundles.
+✅ **Key Rotation**: Dynamic route to rotate medium-term prekeys and top up ephemeral pools.
+✅ **Client Crypto Services**: High-performance client-side X25519/Ed25519 key derivation with resilient environment fallbacks.
+✅ **Database Migration**: Schema tables created and migrated to support device identity sessions.
+✅ **Backend Tests**: 13/13 unit tests passed covering all registration and consumption scenarios.
+✅ **Frontend Build**: Type-safe and bundled with 0 build warnings.
+✅ **Mobile Type Checks**: Full React Native client compile checks passing.
 
-### 4. Interactive Chat Features
-* **Emoji Reactions**: Real-time message reaction overlays with instant WebSocket synchronization.
-* **Reply Messages**: Target-scoped replies rendering contextual citation cards and click-to-scroll navigation.
-* **Forward Messages**: Multi-destination forwarding with "Forwarded" annotations.
-* **Pinned Messages**: Sticky pinned message pager banner supporting multiple pinned messages, slider transitions, and direct viewport alignment on click.
+### Architecture Primitives
+* **Asymmetric Key Exchange**: Curve25519 (X25519)
+* **Digital Signatures**: Ed25519
+* **Key Derivation**: HKDF (SHA-256)
+* **Secure Device Identity**: Decentralized client key management (Zero-Knowledge Server)
 
-### 5. Chat Indicators & Search
-* **Presence Tracking**: Real-time online/offline indicators for all users.
-* **Typing Indicators**: Real-time "Typing..." animations matching peer activity.
-* **Message Status**: Delivery and read receipt checkmarks synchronized via active WebSocket state.
-* **Conversational Search**: Contact searching by phone numbers to instantly initiate chats.
+*Ready for: Phase 2 - Secure Session Establishment*
 
-### 6. Push Notifications
-* **Device Token Registration**: Support for FCM / APNS token mapping across platforms.
-* **Background Notification Delivery**: Triggers high-priority push events when recipient is offline.
+---
+
+## Nexus v1.0-pre-e2ee
+*Release Date: June 30, 2026*
+
+This release serves as the stable pre-End-to-End Encryption milestone, capturing the full foundational feature set of our modern messaging ecosystem.
+
+### Key Features
+* **Authentication & Security**: OTP phone authentication and Security PIN unlock gateway.
+* **Messaging & Group Operations**: Real-time DMs and collaborative group chats.
+* **Rich Media & Voice Notes**: File attachments and inline voice note recording/player.
+* **Interactive Chat Features**: Emoji reactions, target-scoped replies, message forwarding, and sticky pinned message banners.
+* **Chat Indicators & Search**: Online presence, typing indicators, read receipts, and contact search.
+* **Push Notifications**: Device token mapping and offline push delivery via VAPID webpush.
