@@ -48,3 +48,6 @@ __pycache__/
 
 # Cryptographic Keys & Secrets
 *.pem
+
+# TS build info cache
+*.tsbuildinfo
