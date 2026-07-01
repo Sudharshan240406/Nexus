@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Nexus",
+    "slug": "nexus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "nexus",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#060a14"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.neuralnexus.nexus",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Nexus needs camera access to take profile photos.",
+        "NSPhotoLibraryUsageDescription": "Nexus needs photo library access to set your avatar."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#060a14"
+      },
+      "package": "com.neuralnexus.nexus",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image-picker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#10b981"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

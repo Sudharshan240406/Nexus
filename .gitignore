@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+
+# Databases
+*.db
+*.sqlite
+
+# Uploads and temporary media
+uploads/
+.tempmediaStorage/
+
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+build/
+.expo/
+
+# Test files and images
+test_image.png
+
+# Pycache and logs
+__pycache__/
+*.log
+
+# Cryptographic Keys & Secrets
+*.pem

@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Custom scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* ── Glassmorphism utility ─────────────────────────────────────────────────── */
+@layer components {
+  .glass {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.06] shadow-xl;
+  }
+  .glass-strong {
+    @apply bg-white/[0.08] backdrop-blur-2xl border border-white/[0.1] shadow-2xl;
+  }
+}
+
+/* ── Chat bubble tails ─────────────────────────────────────────────────────── */
+.bubble-sent {
+  border-bottom-right-radius: 4px;
+}
+.bubble-received {
+  border-bottom-left-radius: 4px;
+}
+
+/* ── Typing indicator dots ─────────────────────────────────────────────────── */
+.typing-dot {
+  animation: bounceDot 1.4s ease-in-out infinite both;
+}
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.typing-dot:nth-child(3) { animation-delay: 0.32s; }
+
+/* ── Smooth page transitions ──────────────────────────────────────────────── */
+.page-enter {
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* ── Input autofill fix for dark mode ──────────────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f8fafc;
+  -webkit-box-shadow: 0 0 0 40px #0f172a inset;
+  caret-color: #f8fafc;
+}
+
+/* ── Gradient text utility ─────────────────────────────────────────────────── */
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-nexus-400 to-emerald-300;
+}
+
+/* ── Light Mode Override ─────────────────────────────────────────────────── */
+.light,
+.light body,
+.light #root {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.light .bg-dark-950 { background-color: #f8fafc !important; }
+.light .bg-dark-900 { background-color: #f1f5f9 !important; }
+.light .bg-dark-800 { background-color: #ffffff !important; }
+.light .bg-dark-800\/60 { background-color: rgba(255, 255, 255, 0.6) !important; }
+.light .bg-dark-700 { background-color: #f1f5f9 !important; }
+.light .bg-dark-700\/60 { background-color: rgba(241, 245, 249, 0.6) !important; }
+.light .bg-dark-700\/80 { background-color: rgba(241, 245, 249, 0.8) !important; }
+.light .bg-dark-600 { background-color: #e2e8f0 !important; }
+.light .bg-dark-900\/95 { background-color: rgba(241, 245, 249, 0.95) !important; }
+.light .bg-dark-900\/40 { background-color: rgba(241, 245, 249, 0.4) !important; }
+
+/* Text overrides */
+.light .text-dark-50 { color: #0f172a !important; }
+.light .text-dark-100 { color: #1e293b !important; }
+.light .text-dark-200 { color: #334155 !important; }
+.light .text-dark-300 { color: #475569 !important; }
+.light .text-dark-400 { color: #64748b !important; }
+
+/* Borders & glass overrides */
+.light .border-white\/\[0\.05\],
+.light .border-white\/\[0\.06\],
+.light .border-white\/\[0\.08\],
+.light .border-white\/\[0\.1\] {
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+.light .glass {
+  background-color: rgba(255, 255, 255, 0.75) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 12px -1px rgba(0, 0, 0, 0.03) !important;
+}
+
+.light .glass-strong {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Chat bubble styling */
+.light .bubble-received {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+.light .bubble-sent {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
+
+/* Input fields overrides */
+.light input,
+.light textarea {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+  color: #0f172a !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #64748b !important;
+}
+
+.light input:focus,
+.light textarea:focus {
+  border-color: #10b981 !important;
+}
+
+/* Scrollbar overrides for light mode */
+.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
