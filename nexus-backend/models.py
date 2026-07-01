@@ -25,7 +25,7 @@ from sqlalchemy import (
     Integer,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 from database import Base
 
@@ -321,4 +321,148 @@ class PushToken(Base):
 
     def __repr__(self) -> str:
         return f"<PushToken user={self.user_id} platform={self.platform}>"
+
+
+# ── Cryptographic Identity & Devices (E2EE Phase 1) ──────────────────────────
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id_str = Column(String(200), nullable=False)
+    display_name = Column(String(200), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    # Relationships
+    user = relationship("User", backref="devices")
+    identity_key = relationship(
+        "IdentityKey", back_populates="device", uselist=False, cascade="all, delete-orphan"
+    )
+    signed_prekeys = relationship(
+        "SignedPrekey", back_populates="device", cascade="all, delete-orphan"
+    )
+    one_time_prekeys = relationship(
+        "OneTimePrekey", back_populates="device", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "device_id_str", name="uq_device_user_id_str"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Device user={self.user_id} name={self.display_name}>"
+
+
+class IdentityKey(Base):
+    __tablename__ = "identity_keys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    device_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    public_key = Column(String(500), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    device = relationship("Device", back_populates="identity_key")
+
+    def __repr__(self) -> str:
+        return f"<IdentityKey device={self.device_id}>"
+
+
+class SignedPrekey(Base):
+    __tablename__ = "signed_prekeys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    device_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    public_key = Column(String(500), nullable=False)
+    signature = Column(String(500), nullable=False)
+    key_id = Column(Integer, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    device = relationship("Device", back_populates="signed_prekeys")
+
+    def __repr__(self) -> str:
+        return f"<SignedPrekey device={self.device_id} id={self.key_id}>"
+
+
+class OneTimePrekey(Base):
+    __tablename__ = "one_time_prekeys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    device_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    public_key = Column(String(500), nullable=False)
+    key_id = Column(Integer, nullable=False)
+    is_consumed = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    device = relationship("Device", back_populates="one_time_prekeys")
+
+    def __repr__(self) -> str:
+        return f"<OneTimePrekey device={self.device_id} id={self.key_id} consumed={self.is_consumed}>"
+
+
+class DeviceSession(Base):
+    __tablename__ = "device_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_new_uuid)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    peer_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    peer_device_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_data = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "peer_device_id", name="uq_device_session_devices"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DeviceSession user={self.user_id} peer_user={self.peer_user_id}>"
 

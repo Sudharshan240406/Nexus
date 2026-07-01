@@ -223,6 +223,60 @@ class PushTokenOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  E2EE IDENTITY (v2.0 Phase 1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SignedPrekeySchema(BaseModel):
+    public_key: str
+    signature: str
+    key_id: int
+
+
+class OneTimePrekeySchema(BaseModel):
+    public_key: str
+    key_id: int
+
+
+class DeviceRegisterRequest(BaseModel):
+    device_id_str: str
+    display_name: str
+    identity_key: str
+    signed_prekey: SignedPrekeySchema
+    one_time_prekeys: list[OneTimePrekeySchema] = []
+
+
+class DeviceOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    device_id_str: str
+    display_name: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PrekeyBundleDeviceOut(BaseModel):
+    device_id: UUID
+    device_id_str: str
+    display_name: str
+    identity_key: str
+    signed_prekey: SignedPrekeySchema
+    one_time_prekey: Optional[OneTimePrekeySchema] = None
+
+
+class PrekeyBundleOut(BaseModel):
+    user_id: UUID
+    devices: list[PrekeyBundleDeviceOut]
+
+
+class KeyRotateRequest(BaseModel):
+    signed_prekey: Optional[SignedPrekeySchema] = None
+    one_time_prekeys: Optional[list[OneTimePrekeySchema]] = None
+
+
 # Rebuild forward refs
 ConversationOut.model_rebuild()
 

@@ -250,3 +250,77 @@ export async function listPushTokens() {
   return request<PushTokenOut[]>("/push-token");
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  E2EE IDENTITY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface Device {
+  id: string;
+  user_id: string;
+  device_id_str: string;
+  display_name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrekeyBundleDevice {
+  device_id: string;
+  device_id_str: string;
+  display_name: string;
+  identity_key: string;
+  signed_prekey: {
+    public_key: string;
+    signature: string;
+    key_id: number;
+  };
+  one_time_prekey?: {
+    public_key: string;
+    key_id: number;
+  } | null;
+}
+
+export interface PrekeyBundle {
+  user_id: string;
+  devices: PrekeyBundleDevice[];
+}
+
+export async function registerDevice(body: {
+  device_id_str: string;
+  display_name: string;
+  identity_key: string;
+  signed_prekey: { public_key: string; signature: string; key_id: number };
+  one_time_prekeys: { public_key: string; key_id: number }[];
+}) {
+  return request<Device>("/devices/register", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchUserKeys(userId: string) {
+  return request<PrekeyBundle>(`/keys/${userId}`);
+}
+
+export async function rotateKeys(body: {
+  signed_prekey?: { public_key: string; signature: string; key_id: number };
+  one_time_prekeys?: { public_key: string; key_id: number }[];
+}, deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<{ message: string }>(`/keys/rotate${query}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listDevices() {
+  return request<Device[]>("/devices");
+}
+
+export async function deleteDevice(deviceId: string) {
+  return request<{ message: string }>(`/devices/${deviceId}`, {
+    method: "DELETE",
+  });
+}
+

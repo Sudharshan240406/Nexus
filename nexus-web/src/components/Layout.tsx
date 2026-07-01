@@ -4,6 +4,7 @@ import { useAuthStore } from "../stores/authStore";
 import { connectWebSocket, disconnectWebSocket } from "../services/ws";
 import { registerPushToken, removePushToken } from "../services/api";
 import { useNotificationStore } from "../stores/notificationStore";
+import { useCryptoStore } from "../stores/cryptoStore";
 
 function urlB64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -43,6 +44,13 @@ export default function Layout() {
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
+
+  // Initialize E2EE device identity
+  useEffect(() => {
+    if (userId) {
+      useCryptoStore.getState().initDeviceIdentity(navigator.userAgent || "Web Session");
+    }
+  }, [userId]);
 
   // Connect WebSocket on mount (StrictMode-safe via connection ID)
   useEffect(() => {
