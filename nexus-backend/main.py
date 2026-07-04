@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from database import engine, Base, async_session
-from routers import auth, chat, keys
+from routers import auth, chat, keys, sessions
 from services.websocket_manager import manager
 from pywebpush import webpush, WebPushException
 
@@ -384,6 +384,7 @@ async def health():
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(keys.router)
+app.include_router(sessions.router)
 
 # Mount static file serving AFTER routers so /media/upload is not intercepted
 os.makedirs("uploads", exist_ok=True)

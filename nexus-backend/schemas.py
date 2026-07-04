@@ -277,6 +277,42 @@ class KeyRotateRequest(BaseModel):
     one_time_prekeys: Optional[list[OneTimePrekeySchema]] = None
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  E2EE SESSIONS (v2.0 Phase 2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class DeviceSessionCreate(BaseModel):
+    peer_user_id: UUID
+    peer_device_id: UUID
+    session_data: str
+    peer_session_data: Optional[str] = None
+
+
+class DeviceSessionOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    device_id: UUID
+    peer_user_id: UUID
+    peer_device_id: UUID
+    session_data: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DeviceSessionStatusOut(BaseModel):
+    id: UUID
+    peer_user_id: UUID
+    peer_device_id: UUID
+    is_expired: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # Rebuild forward refs
 ConversationOut.model_rebuild()
+
 

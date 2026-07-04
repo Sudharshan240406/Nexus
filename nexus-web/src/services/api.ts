@@ -324,3 +324,58 @@ export async function deleteDevice(deviceId: string) {
   });
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  E2EE SESSIONS (v2.0 Phase 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface DeviceSession {
+  id: string;
+  user_id: string;
+  device_id: string;
+  peer_user_id: string;
+  peer_device_id: string;
+  session_data: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceSessionStatus {
+  id: string;
+  peer_user_id: string;
+  peer_device_id: string;
+  is_expired: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createSession(body: {
+  peer_user_id: string;
+  peer_device_id: string;
+  session_data: string;
+  peer_session_data?: string;
+}, deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<DeviceSession>(`/sessions${query}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchSession(device: string, deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<DeviceSession>(`/sessions/${device}${query}`);
+}
+
+export async function deleteSession(sessionId: string) {
+  return request<{ message: string }>(`/sessions/${sessionId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchSessionStatus(deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<DeviceSessionStatus[]>(`/sessions/status${query}`);
+}
+
+
