@@ -71,7 +71,7 @@ export function connectWebSocket(): number {
   socket.onmessage = (event) => {
     try {
       const data: WSEvent = JSON.parse(event.data);
-      handleEvent(data);
+      handleEvent(data).catch(err => console.error("[Nexus WS] Event handling failed:", err));
     } catch (err) {
       console.error("[Nexus WS] Failed to parse message:", err);
     }
@@ -134,17 +134,82 @@ export function disconnectWebSocket(forConnectionId?: number): void {
   }
 }
 
+// ── Decrypt Message In Place ──────────────────────────────────────────────────
+
+export async function decryptMessageInPlace(msg: any): Promise<void> {
+  if (msg.message_type !== "enc_text" || !msg.content) return;
+
+  try {
+    const payload = JSON.parse(msg.content);
+    if (!payload.ciphertext || !payload.keys) {
+      throw new Error("Invalid E2EE format");
+    }
+
+    const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
+    const keyEntry = payload.keys[myDeviceIdStr];
+    if (!keyEntry) {
+      msg.content = "🔒 Decryption failed: Message not encrypted for this device";
+      return;
+    }
+
+    // Replay attack protection
+    if (msg.sender_device_id && msg.message_counter !== undefined) {
+      const counterKey = `nexus_peer_counter_${msg.sender_device_id}`;
+      const lastCounter = parseInt(localStorage.getItem(counterKey) || "-1", 10);
+      if (msg.message_counter <= lastCounter) {
+        msg.content = "🔒 Decryption failed: Replayed message detected";
+        return;
+      }
+      localStorage.setItem(counterKey, msg.message_counter.toString());
+    }
+
+    if (!msg.sender_id || !msg.sender_device_id) {
+      throw new Error("Missing sender identity");
+    }
+
+    const { fetchUserKeys } = await import("./api");
+    const bundle = await fetchUserKeys(msg.sender_id);
+    const senderDevice = bundle.devices.find(d => d.device_id_str === msg.sender_device_id);
+    if (!senderDevice) {
+      throw new Error("Sender device not found in active bundles");
+    }
+
+    const { getOrCreateSession, decryptMessageAESGCM } = await import("./crypto");
+    const session = await getOrCreateSession(msg.sender_id, msg.sender_device_id, senderDevice.device_id);
+    if (!session) {
+      throw new Error("No secure session established");
+    }
+
+    const K_msg = await decryptMessageAESGCM(
+      keyEntry.enc_key,
+      keyEntry.nonce,
+      session.sharedSecret,
+      keyEntry.algo
+    );
+
+    const plaintext = await decryptMessageAESGCM(
+      payload.ciphertext,
+      msg.nonce,
+      K_msg,
+      msg.algorithm
+    );
+
+    msg.content = plaintext;
+  } catch (err: any) {
+    console.error("[Nexus WS] Decryption failed:", err);
+    msg.content = `🔒 Decryption failed: ${err.message || err}`;
+  }
+}
+
 // ── Event dispatcher ────────────────────────────────────────────────────────
 
-function handleEvent(data: WSEvent): void {
+async function handleEvent(data: WSEvent): Promise<void> {
   const store = useConversationStore.getState();
 
   switch (data.event) {
     case "new_message":
-      store.addMessage(data.message.conversation_id, data.message);
-      break;
-
     case "message_sent":
+      await decryptMessageInPlace(data.message);
       store.addMessage(data.message.conversation_id, data.message);
       break;
 
@@ -171,6 +236,7 @@ function handleEvent(data: WSEvent): void {
       break;
 
     case "message_edited":
+      await decryptMessageInPlace(data.message);
       store.updateMessage(data.message.conversation_id, data.message.id, data.message);
       break;
 
@@ -195,6 +261,7 @@ function handleEvent(data: WSEvent): void {
       break;
 
     case "message_pinned":
+      await decryptMessageInPlace(data.message);
       store.updateMessage(data.conversation_id, data.message.id, {
         is_pinned: true,
       });
@@ -219,17 +286,87 @@ function handleEvent(data: WSEvent): void {
 
 // ── Send helpers ────────────────────────────────────────────────────────────
 
-export function sendMessage(
+export async function sendMessage(
   conversationId: string,
   content: string,
   messageType: string = "text",
   replyToMessageId?: string | null,
   mediaUrl?: string | null
-): void {
+): Promise<void> {
   console.log("sendMessage called, socket:", socket, "readyState:", socket?.readyState);
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     console.error("[Nexus WS] Not connected");
     return;
+  }
+
+  if (messageType === "text") {
+    try {
+      const store = useConversationStore.getState();
+      const conversation = store.conversations.find(c => c.id === conversationId);
+      const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
+
+      if (conversation && myDeviceIdStr) {
+        const K_msg_bytes = new Uint8Array(32);
+        if (window.crypto?.getRandomValues) {
+          window.crypto.getRandomValues(K_msg_bytes);
+        } else {
+          for (let i = 0; i < 32; i++) K_msg_bytes[i] = Math.floor(Math.random() * 256);
+        }
+        const { arrayBufferToBase64 } = await import("./crypto");
+        const K_msg = arrayBufferToBase64(K_msg_bytes);
+
+        const { encryptMessageAESGCM, getOrCreateSession } = await import("./crypto");
+        const msgEncResult = await encryptMessageAESGCM(content, K_msg);
+
+        const keysMap: Record<string, any> = {};
+
+        for (const p of conversation.participants) {
+          const { fetchUserKeys } = await import("./api");
+          const bundle = await fetchUserKeys(p.user_id);
+          
+          for (const d of bundle.devices) {
+            const session = await getOrCreateSession(p.user_id, d.device_id_str, d.device_id);
+            if (session) {
+              const encKeyResult = await encryptMessageAESGCM(K_msg, session.sharedSecret);
+              
+              session.lastSentCounter += 1;
+              localStorage.setItem(`nexus_session_${d.device_id_str}`, JSON.stringify(session));
+
+              keysMap[d.device_id_str] = {
+                enc_key: encKeyResult.ciphertext,
+                nonce: encKeyResult.nonce,
+                algo: encKeyResult.algorithm
+              };
+            }
+          }
+        }
+
+        const currentCounter = Math.floor(Date.now() / 1000);
+
+        const encryptedPayload = {
+          ciphertext: msgEncResult.ciphertext,
+          keys: keysMap
+        };
+
+        socket.send(
+          JSON.stringify({
+            conversation_id: conversationId,
+            content: JSON.stringify(encryptedPayload),
+            message_type: "enc_text",
+            reply_to_message_id: replyToMessageId || null,
+            media_url: mediaUrl || null,
+            encryption_version: msgEncResult.version,
+            nonce: msgEncResult.nonce,
+            message_counter: currentCounter,
+            algorithm: msgEncResult.algorithm,
+            sender_device_id: myDeviceIdStr
+          })
+        );
+        return;
+      }
+    } catch (err) {
+      console.error("[Nexus WS] E2EE encryption failed, falling back to plaintext:", err);
+    }
   }
 
   socket.send(

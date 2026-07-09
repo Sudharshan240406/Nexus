@@ -86,13 +86,31 @@ export async function createConversation(body: ConversationCreateBody) {
 }
 
 export async function getMessages(conversationId: string, page = 1) {
-  return request<PaginatedMessages>(
+  const data = await request<PaginatedMessages>(
     `/conversations/${conversationId}/messages?page=${page}&page_size=50`
   );
+  try {
+    const { decryptMessageInPlace } = await import("./ws");
+    for (const msg of data.messages) {
+      await decryptMessageInPlace(msg);
+    }
+  } catch (err) {
+    console.error("Failed to decrypt history messages:", err);
+  }
+  return data;
 }
 
 export async function getPinnedMessages(conversationId: string) {
-  return request<Message[]>(`/conversations/${conversationId}/pins`);
+  const data = await request<Message[]>(`/conversations/${conversationId}/pins`);
+  try {
+    const { decryptMessageInPlace } = await import("./ws");
+    for (const msg of data) {
+      await decryptMessageInPlace(msg);
+    }
+  } catch (err) {
+    console.error("Failed to decrypt pinned messages:", err);
+  }
+  return data;
 }
 
 export async function pinMessage(messageId: string) {

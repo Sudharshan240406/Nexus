@@ -161,3 +161,85 @@ export async function uploadMedia(
     message_type: string;
   }>;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  E2EE IDENTITY & SESSIONS (v2.0 Phase 2/3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface Device {
+  id: string;
+  user_id: string;
+  device_id_str: string;
+  display_name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrekeyBundleDevice {
+  device_id: string;
+  device_id_str: string;
+  display_name: string;
+  identity_key: string;
+  signed_prekey: {
+    public_key: string;
+    signature: string;
+    key_id: number;
+  };
+  one_time_prekey?: {
+    public_key: string;
+    key_id: number;
+  } | null;
+}
+
+export interface PrekeyBundle {
+  user_id: string;
+  devices: PrekeyBundleDevice[];
+}
+
+export interface DeviceSession {
+  id: string;
+  user_id: string;
+  device_id: string;
+  peer_user_id: string;
+  peer_device_id: string;
+  session_data: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceSessionStatus {
+  id: string;
+  peer_user_id: string;
+  peer_device_id: string;
+  is_expired: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchUserKeys(userId: string) {
+  return request<PrekeyBundle>(`/keys/${userId}`);
+}
+
+export async function createSession(body: {
+  peer_user_id: string;
+  peer_device_id: string;
+  session_data: string;
+  peer_session_data?: string;
+}, deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<DeviceSession>(`/sessions${query}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchSession(device: string, deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<DeviceSession>(`/sessions/${device}${query}`);
+}
+
+export async function fetchSessionStatus(deviceIdStr?: string) {
+  const query = deviceIdStr ? `?device_id_str=${encodeURIComponent(deviceIdStr)}` : "";
+  return request<DeviceSessionStatus[]>(`/sessions/status${query}`);
+}

@@ -184,6 +184,11 @@ class Message(Base):
     duration = Column(Integer, nullable=True)
     file_size = Column(Integer, nullable=True)
     mime_type = Column(String(100), nullable=True)
+    encryption_version = Column(String(50), nullable=True)
+    nonce = Column(String(200), nullable=True)
+    message_counter = Column(Integer, nullable=True)
+    algorithm = Column(String(50), nullable=True)
+    sender_device_id = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     __table_args__ = (

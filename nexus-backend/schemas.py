@@ -131,6 +131,11 @@ class MessageOut(BaseModel):
     is_pinned: bool = False
     is_forwarded: bool = False
     forwarded_from: Optional[str] = None
+    encryption_version: Optional[str] = None
+    nonce: Optional[str] = None
+    message_counter: Optional[int] = None
+    algorithm: Optional[str] = None
+    sender_device_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -145,6 +150,11 @@ class MessageCreateRequest(BaseModel):
     media_url: Optional[str] = None
     reply_to_message_id: Optional[UUID] = None
     duration: Optional[int] = None
+    encryption_version: Optional[str] = None
+    nonce: Optional[str] = None
+    message_counter: Optional[int] = None
+    algorithm: Optional[str] = None
+    sender_device_id: Optional[str] = None
 
 
 class MessageUpdate(BaseModel):
@@ -171,6 +181,11 @@ class WSIncomingMessage(BaseModel):
     reply_to_message_id: Optional[str] = None
     media_url: Optional[str] = None
     duration: Optional[int] = None
+    encryption_version: Optional[str] = None
+    nonce: Optional[str] = None
+    message_counter: Optional[int] = None
+    algorithm: Optional[str] = None
+    sender_device_id: Optional[str] = None
 
 
 class WSOutgoingMessage(BaseModel):

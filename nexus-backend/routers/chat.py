@@ -197,7 +197,9 @@ async def enqueue_notification(
             title = sender_name
 
         # Determine notification body
-        if message_type == "text":
+        if message_type == "enc_text":
+            body = "🔒 Encrypted message"
+        elif message_type == "text":
             body = content or ""
         elif message_type == "image":
             body = "📷 Photo"
@@ -2162,7 +2164,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                         reply_to_message_id=reply_to_id,
                         duration=duration_val,
                         file_size=file_size_val,
-                        mime_type=mime_type_val
+                        mime_type=mime_type_val,
+                        encryption_version=incoming.encryption_version,
+                        nonce=nonce_val_pass if False else incoming.nonce,
+                        message_counter=incoming.message_counter,
+                        algorithm=incoming.algorithm,
+                        sender_device_id=incoming.sender_device_id
                     )
 
                     # Reload with relationships

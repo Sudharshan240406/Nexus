@@ -89,7 +89,12 @@ class MessageService:
         file_size: Optional[int] = None,
         mime_type: Optional[str] = None,
         is_forwarded: bool = False,
-        forwarded_from: Optional[str] = None
+        forwarded_from: Optional[str] = None,
+        encryption_version: Optional[str] = None,
+        nonce: Optional[str] = None,
+        message_counter: Optional[int] = None,
+        algorithm: Optional[str] = None,
+        sender_device_id: Optional[str] = None
     ) -> Message:
         """Create a new message in the database and pre-populate message receipts."""
         # 1. Enforce rate limiting
@@ -110,7 +115,12 @@ class MessageService:
             file_size=file_size,
             mime_type=mime_type,
             is_forwarded=is_forwarded,
-            forwarded_from=forwarded_from
+            forwarded_from=forwarded_from,
+            encryption_version=encryption_version,
+            nonce=nonce,
+            message_counter=message_counter,
+            algorithm=algorithm,
+            sender_device_id=sender_device_id
         )
         db.add(msg)
         await db.flush()  # Populates msg.id
