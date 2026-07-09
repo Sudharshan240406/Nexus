@@ -145,7 +145,8 @@ async def get_sessions_status(
     out = []
     for s in sessions:
         # Expiration logic: sessions expire after 30 days
-        is_expired = (now - s.updated_at) > timedelta(days=30)
+        s_updated_at = s.updated_at.replace(tzinfo=timezone.utc) if s.updated_at.tzinfo is None else s.updated_at
+        is_expired = (now - s_updated_at) > timedelta(days=30)
         out.append(
             DeviceSessionStatusOut(
                 id=s.id,
@@ -211,7 +212,8 @@ async def get_session(
 
     # Validate Expiration
     now = datetime.now(timezone.utc)
-    if (now - session.updated_at) > timedelta(days=30):
+    session_updated_at = session.updated_at.replace(tzinfo=timezone.utc) if session.updated_at.tzinfo is None else session.updated_at
+    if (now - session_updated_at) > timedelta(days=30):
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Session has expired. Renewal required."

@@ -297,22 +297,6 @@ app = FastAPI(
 )
 
 
-# ── CORS ─────────────────────────────────────────────────────────────────────
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 # ── JWT Auth Middleware ──────────────────────────────────────────────────────
 
 # Paths that do NOT require authentication
@@ -361,13 +345,32 @@ async def jwt_auth_middleware(request: Request, call_next):
         from routers.auth import decode_access_token
         payload = decode_access_token(token)
         request.state.user_id = payload["sub"]
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[Auth Middleware] JWT decode failed for token: {token[:15]}... Error: {e}")
+        traceback.print_exc()
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": "Invalid or expired token"},
         )
 
     return await call_next(request)
+
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Health Check ─────────────────────────────────────────────────────────────

@@ -72,11 +72,11 @@ async def test_audio_upload_validations(client):
         res = client.post(
             "/upload/media",
             headers=headers,
-            files={"file": ("test.txt", invalid_file, "text/plain")},
+            files={"file": ("test.exe", invalid_file, "application/octet-stream")},
             data={"conversation_id": str(conv_id), "duration": 12.5}
         )
         assert res.status_code == 400
-        assert "not allowed" in res.json()["detail"]
+        assert "is not supported" in res.json()["detail"]
 
         # 2. Test invalid MIME type for valid extension
         invalid_mime_file = io.BytesIO(b"dummy audio")

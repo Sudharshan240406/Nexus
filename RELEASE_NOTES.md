@@ -2,6 +2,23 @@
 
 ---
 
+## Nexus v2.0 Phase 2
+*Release Date: July 8, 2026*
+
+This milestone delivers Phase 2 of the Cryptographic Identity Infrastructure, introducing Secure Session Establishment (X3DH handshake) and session lifecycle management.
+
+### Completed Features
+
+✅ **Cryptographic Session Handshake**: Established secure, bi-directional peer sessions with initial handshake envelopes leveraging X3DH.
+✅ **Replay Protection**: Integrated replay detection to reject identical or stale handshake payloads (HTTP 400 Bad Request).
+✅ **Session Lifecycle Management**: Endpoints to register/update, fetch, delete, and check status for all peer sessions.
+✅ **Session Expiration & Renewal**: Automatic 30-day session expiration check returning HTTP 410 Gone on expired sessions to trigger renewal.
+✅ **Robust Timezone Handling**: Fixed timezone-naive vs timezone-aware datetime comparison issues when computing session expiration (converting SQLite naive timestamps to UTC).
+✅ **CORS Preflight Order Fix**: Adjusted backend middleware stack registration order so that early-exit responses (like 401 Unauthorized) include correct CORS headers.
+✅ **Full Verification**: 16/16 backend tests passed, and client-side builds successfully verified.
+
+---
+
 ## Nexus v2.0 Phase 1
 *Release Date: July 1, 2026*
 

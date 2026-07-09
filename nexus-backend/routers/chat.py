@@ -1262,51 +1262,18 @@ async def upload_media(
 
     os.makedirs("uploads", exist_ok=True)
 
-    # 1. Enforce validation of extensions
-    filename = file.filename or "upload"
-    ext = os.path.splitext(filename)[1].lower()
-    if ext not in _ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type '{ext}' not allowed. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}"
-        )
-
-    # 2. Enforce MIME type consistency validation
-    mime_type = file.content_type
-    if mime_type not in _ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"MIME type '{mime_type}' not allowed."
-        )
-
-    is_image_ext = ext in {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-    is_audio_ext = ext in {".webm", ".ogg", ".mp3", ".m4a", ".opus", ".wav"}
-
-    if is_image_ext:
-        if not mime_type or not mime_type.startswith("image/"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Inconsistent MIME type '{mime_type}' for image extension '{ext}'."
-            )
-    elif is_audio_ext:
-        if not mime_type or (not mime_type.startswith("audio/") and mime_type != "video/webm"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Inconsistent MIME type '{mime_type}' for audio extension '{ext}'."
-            )
-
-    # 3. Enforce max size validation 20MB
+    # 1. Size & Extension validation using AttachmentService
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
-    
-    if file_size > 20 * 1024 * 1024:
-        raise HTTPException(
-            status_code=400,
-            detail="File size exceeds the 20MB limit."
-        )
 
-    is_audio = ext in {".mp3", ".wav", ".m4a", ".ogg", ".webm"} or (mime_type and mime_type.startswith("audio/"))
+    from messaging import attachment_service
+    category = attachment_service.validate_file(file, file_size)
+
+    filename = file.filename or "upload"
+    ext = os.path.splitext(filename)[1].lower()
+    mime_type = file.content_type
+    is_audio = (category == "audio")
 
     if is_audio:
         if not conversation_id:
@@ -1933,6 +1900,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             all_related_participants, presence_payload, exclude=user_id
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"WS CONNECT BROADCAST ERROR: {e}")
 
     try:
@@ -1965,6 +1934,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 conv_id = data.get("conversation_id")
                 if not conv_id:
                     continue
+                from messaging import typing_manager
+                typing_manager.set_typing(user_id, conv_id)
+                typing_users = typing_manager.get_typing_users(conv_id)
                 async with async_session() as db:
                     result = await db.execute(
                         select(Participant.user_id).where(
@@ -1974,7 +1946,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                     participant_ids = [str(row[0]) for row in result.all()]
                 await manager.broadcast_to_conversation(
                     participant_ids,
-                    {"event": "typing", "conversation_id": conv_id, "user_id": user_id},
+                    {
+                        "event": "typing",
+                        "conversation_id": conv_id,
+                        "user_id": user_id,
+                        "typing_users": typing_users
+                    },
                     exclude=user_id,
                 )
                 continue
@@ -1996,61 +1973,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                             )
                             .values(last_read_message_id=UUID(up_to_msg_id))
                         )
-
-                        # 2. Update message receipts to "read"
-                        target_msg_res = await db.execute(
-                            select(Message).where(Message.id == UUID(up_to_msg_id))
-                        )
-                        target_msg = target_msg_res.scalar_one_or_none()
-
-                        updated_msg_ids = []
-                        if target_msg:
-                            receipts_res = await db.execute(
-                                select(MessageReceipt)
-                                .join(Message, Message.id == MessageReceipt.message_id)
-                                .where(
-                                    Message.conversation_id == UUID(conv_id),
-                                    MessageReceipt.user_id == UUID(user_id),
-                                    MessageReceipt.status != "read",
-                                    Message.created_at <= target_msg.created_at
-                                )
-                            )
-                            receipts_to_read = receipts_res.scalars().all()
-                            for r in receipts_to_read:
-                                r.status = "read"
-                                r.updated_at = datetime.now(timezone.utc)
-                                updated_msg_ids.append(str(r.message_id))
-                        await db.commit()
-
-                        result = await db.execute(
-                            select(Participant.user_id).where(
-                                Participant.conversation_id == UUID(conv_id)
-                            )
-                        )
-                        participant_ids = [str(row[0]) for row in result.all()]
-
-                    await manager.broadcast_to_conversation(
-                        participant_ids,
-                        {
-                            "event": "read_receipt",
-                            "conversation_id": conv_id,
-                            "user_id": user_id,
-                            "message_id": up_to_msg_id,
-                        },
-                        exclude=user_id,
-                    )
-
-                    # Broadcast the new message_read event for each updated message
-                    for msg_id in updated_msg_ids:
-                        await manager.broadcast_to_conversation(
-                            participant_ids,
-                            {
-                                "event": "message_read",
-                                "conversation_id": conv_id,
-                                "message_id": msg_id,
-                                "user_id": user_id,
-                            }
-                        )
+                        from messaging import read_receipts_service
+                        await read_receipts_service.mark_as_read(db, UUID(conv_id), UUID(user_id), UUID(up_to_msg_id))
                 except Exception as e:
                     print(f"MARK_READ ERROR: {e}")
                 continue
@@ -2180,17 +2104,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 await websocket.send_json({"event": "error", "detail": "Invalid message format"})
                 continue
 
-            async with async_session() as db:
-                result = await db.execute(
-                    select(Participant).where(
-                        Participant.conversation_id == UUID(incoming.conversation_id),
-                        Participant.user_id == UUID(user_id),
-                    )
-                )
-                if not result.scalar_one_or_none():
-                    await websocket.send_json({"event": "error", "detail": "Not a member of this conversation"})
-                    continue
-
+            try:
                 media_url = incoming.media_url
                 content_val = incoming.content
                 if not media_url and incoming.message_type in ("image", "audio", "gif"):
@@ -2208,7 +2122,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 file_size_val = None
                 mime_type_val = None
 
-                if incoming.message_type == "audio" and media_url:
+                if media_url:
                     filename_only = media_url.replace("/media/", "")
                     local_path = os.path.join("uploads", filename_only)
                     if os.path.exists(local_path):
@@ -2229,118 +2143,93 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                                 mime_type_val = "audio/mp4"
                             elif ext == ".wav":
                                 mime_type_val = "audio/wav"
+                            elif ext == ".pdf":
+                                mime_type_val = "application/pdf"
 
-                msg = Message(
-                    conversation_id=UUID(incoming.conversation_id),
-                    sender_id=UUID(user_id),
-                    content=content_val,
-                    message_type=incoming.message_type,
-                    media_url=media_url,
-                    reply_to_message_id=reply_to_id,
-                    duration=duration_val,
-                    file_size=file_size_val,
-                    mime_type=mime_type_val,
-                )
-                db.add(msg)
-                await db.flush()
+                from messaging import message_service, delivery_engine, read_receipts_service
 
-                # Get all other participant IDs to create receipts
-                p_result = await db.execute(
-                    select(Participant.user_id).where(
-                        Participant.conversation_id == msg.conversation_id,
-                        Participant.user_id != msg.sender_id
-                    )
-                )
-                other_p_ids = [row[0] for row in p_result.all()]
-
-                for p_id in other_p_ids:
-                    db.add(MessageReceipt(
-                        message_id=msg.id,
-                        user_id=p_id,
-                        status="sent"
-                    ))
-                await db.commit()
-
-                # Reload with all relationships
-                result = await db.execute(
-                    select(Message)
-                    .options(
-                        joinedload(Message.sender),
-                        selectinload(Message.reactions),
-                        selectinload(Message.receipts),
-                        joinedload(Message.reply_to).joinedload(Message.sender),
-                    )
-                    .where(Message.id == msg.id)
-                )
-                msg = result.scalar_one()
-                msg_out = await _build_message_out(msg)
-
-                ws_payload = {
-                    "event": "new_message",
-                    "message": msg_out.model_dump(mode="json"),
-                }
-
-                participant_ids = await _get_participant_ids(db, UUID(incoming.conversation_id))
-
-            # Broadcast the message. Retrieve delivered participant user IDs.
-            delivered_uids = await manager.broadcast_to_conversation(
-                participant_ids, ws_payload, exclude=user_id
-            )
-
-            async with async_session() as db_session:
-                await enqueue_notification(
-                    db_session,
-                    UUID(user_id),
-                    UUID(incoming.conversation_id),
-                    msg.id,
-                    incoming.message_type,
-                    content_val
-                )
-
-            # If any were delivered, update DB and broadcast 'message_delivered'
-            if delivered_uids:
                 async with async_session() as db:
-                    await db.execute(
-                        update(MessageReceipt)
-                        .where(
-                            MessageReceipt.message_id == msg.id,
-                            MessageReceipt.user_id.in_([UUID(uid) for uid in delivered_uids])
+                    conv_uuid = UUID(incoming.conversation_id)
+                    
+                    # Create message (validates membership, rate limit, and creates sent receipts)
+                    msg = await message_service.create_message(
+                        db=db,
+                        sender_id=UUID(user_id),
+                        conversation_id=conv_uuid,
+                        content=content_val,
+                        message_type=incoming.message_type,
+                        media_url=media_url,
+                        reply_to_message_id=reply_to_id,
+                        duration=duration_val,
+                        file_size=file_size_val,
+                        mime_type=mime_type_val
+                    )
+
+                    # Reload with relationships
+                    result = await db.execute(
+                        select(Message)
+                        .options(
+                            joinedload(Message.sender),
+                            selectinload(Message.reactions),
+                            selectinload(Message.receipts),
+                            joinedload(Message.reply_to).joinedload(Message.sender),
                         )
-                        .values(status="delivered", updated_at=datetime.now(timezone.utc))
+                        .where(Message.id == msg.id)
                     )
-                    await db.commit()
+                    msg = result.scalar_one()
+                    msg_out = await _build_message_out(msg)
+                    participant_ids = await _get_participant_ids(db, conv_uuid)
 
-                # Broadcast delivery notifications to sender/members
-                for uid in delivered_uids:
-                    await manager.broadcast_to_conversation(
-                        participant_ids,
-                        {
-                            "event": "message_delivered",
-                            "conversation_id": str(msg.conversation_id),
-                            "message_id": str(msg.id),
-                            "user_id": uid
-                        }
+                # Dispatch message using delivery_engine
+                async with async_session() as db:
+                    delivered_uids = await delivery_engine.dispatch_message(
+                        db=db,
+                        sender_id=UUID(user_id),
+                        conversation_id=conv_uuid,
+                        message_id=msg.id,
+                        message_type=msg.message_type,
+                        content=msg.content,
+                        message_payload={
+                            "event": "new_message",
+                            "message": msg_out.model_dump(mode="json"),
+                        },
+                        recipient_ids=participant_ids
                     )
 
-            # Re-read message status after delivery updates to send correct final status to sender
-            async with async_session() as db:
-                result = await db.execute(
-                    select(Message)
-                    .options(
-                        joinedload(Message.sender),
-                        selectinload(Message.reactions),
-                        selectinload(Message.receipts),
-                        joinedload(Message.reply_to).joinedload(Message.sender),
-                    )
-                    .where(Message.id == msg.id)
-                )
-                msg = result.scalar_one()
-                msg_out = await _build_message_out(msg)
+                    if delivered_uids:
+                        for uid in delivered_uids:
+                            await read_receipts_service.mark_as_delivered(
+                                db=db,
+                                message_ids=[msg.id],
+                                user_id=UUID(uid)
+                            )
 
-            await websocket.send_json({
-                "event": "message_sent",
-                "message": msg_out.model_dump(mode="json"),
-            })
+                    # Re-read message status after delivery updates to send correct final status to sender
+                    result = await db.execute(
+                        select(Message)
+                        .options(
+                            joinedload(Message.sender),
+                            selectinload(Message.reactions),
+                            selectinload(Message.receipts),
+                            joinedload(Message.reply_to).joinedload(Message.sender),
+                        )
+                        .where(Message.id == msg.id)
+                    )
+                    msg = result.scalar_one()
+                    msg_out = await _build_message_out(msg)
+
+                await websocket.send_json({
+                    "event": "message_sent",
+                    "message": msg_out.model_dump(mode="json"),
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"NEW_MESSAGE ERROR: {e}")
+                try:
+                    await websocket.send_json({"event": "error", "detail": str(e)})
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
         pass
