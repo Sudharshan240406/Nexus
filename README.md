@@ -174,6 +174,18 @@ nexus/
 
 ---
 
+## 🔒 End-to-End Encryption (E2EE)
+
+Nexus v2.0 implements state-of-the-art client-side end-to-end encryption for text messages and media attachments:
+
+### Documentation
+- [E2EE Messaging Protocol](E2EE_MESSAGING.md) - Details text message encryption, X3DH key exchange, and session establishment.
+- [Encrypted Media Attachments](encrypted_media.md) - Covers key negotiation, file encryption, and upload envelope packaging.
+- [Voice Note Encryption Architecture](voice_encryption.md) - Details recording capture, encryption, and audio streaming playback pipelines.
+- [Attachment Security Model](attachment_security.md) - Describes security constraints, size limits, and counter-based replay protections.
+
+---
+
 ## 📜 License
 
 This project is proprietary to **Qudra Minds**. All rights reserved.

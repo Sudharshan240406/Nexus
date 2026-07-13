@@ -13,7 +13,10 @@ interface MessageInputProps {
     content: string,
     type?: string,
     replyToMessageId?: string | null,
-    mediaUrl?: string | null
+    mediaUrl?: string | null,
+    fileNonce?: string | null,
+    version?: string | null,
+    algo?: string | null
   ) => void;
   replyTo: Message | null;
   onCancelReply: () => void;
@@ -145,17 +148,46 @@ export default function MessageInput({
     }
   };
 
+  const getFileCategory = (file: File): string => {
+    const mime = file.type;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (mime.startsWith("image/")) return "image";
+    if (mime.startsWith("video/")) return "video";
+    if (mime.startsWith("audio/")) return "audio";
+    if (mime === "application/pdf" || ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "rtf", "zip", "rar"].includes(ext || "")) {
+      return "document";
+    }
+    return "document";
+  };
+
   const handleConfirmUpload = async () => {
     if (!selectedFile) return;
 
     setUploading(true);
     try {
-      const res = await uploadMedia(selectedFile);
-      onSend(caption.trim(), "image", replyTo?.id, res.media_url);
+      const res = await uploadMedia(selectedFile, conversationId);
+      
+      const category = getFileCategory(selectedFile);
+      const isE2EE = !!localStorage.getItem("nexus_device_id_str");
+      const msgType = isE2EE ? "enc_" + category : category;
+
+      // For E2EE media, content is the JSON envelope, otherwise caption
+      const contentVal = isE2EE ? res.envelopeJson : caption.trim();
+
+      onSend(
+        contentVal || "",
+        msgType,
+        replyTo?.id,
+        res.media_url,
+        isE2EE ? res.fileNonce : undefined,
+        isE2EE ? res.version : undefined,
+        isE2EE ? res.algo : undefined
+      );
+
       handleCancelUpload();
       onCancelReply();
     } catch (err: any) {
-      alert(err.message || "Failed to upload image");
+      alert(err.message || "Failed to upload file");
     } finally {
       setUploading(false);
     }
@@ -176,20 +208,38 @@ export default function MessageInput({
         )}
 
         {previewUrl ? (
-          /* 📸 Image Preview Card with Caption and Confirm/Cancel Buttons */
+          /* 📸 File Preview Card with Caption and Confirm/Cancel Buttons */
           <div className="bg-dark-800/90 rounded-2xl p-3 border border-white/[0.08] flex flex-col sm:flex-row gap-3 items-center animate-fade-in">
-            {/* Thumbnail */}
-            <div className="relative w-24 h-20 rounded-xl overflow-hidden border border-white/[0.1] bg-dark-900 flex-shrink-0">
-              <img
-                src={previewUrl}
-                alt="Upload preview"
-                className="w-full h-full object-cover"
-              />
+            {/* Thumbnail / File Icon */}
+            <div className="relative w-24 h-20 rounded-xl overflow-hidden border border-white/[0.1] bg-dark-900 flex-shrink-0 flex items-center justify-center">
+              {selectedFile?.type.startsWith("image/") ? (
+                <img
+                  src={previewUrl}
+                  alt="Upload preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : selectedFile?.type.startsWith("video/") ? (
+                <div className="flex flex-col items-center justify-center text-nexus-400">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="23 7 16 12 23 17 23 7" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                  </svg>
+                  <span className="text-[9px] mt-1 truncate max-w-[80px] px-1">{selectedFile.name}</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-nexus-400 p-1 text-center">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span className="text-[9px] mt-1 truncate max-w-[80px] px-1">{selectedFile?.name}</span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={handleCancelUpload}
                 className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/75 hover:bg-black text-white flex items-center justify-center transition-colors border border-white/10"
-                title="Remove image"
+                title="Remove file"
               >
                 ✕
               </button>
@@ -266,7 +316,7 @@ export default function MessageInput({
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-dark-800/60 border border-white/[0.06] text-dark-300 hover:text-white hover:bg-white/[0.04] transition-all active:scale-95 disabled:opacity-50"
-              title="Upload image"
+              title="Upload file"
             >
               {uploading ? (
                 <span className="w-5 h-5 border-2 border-nexus-400/30 border-t-nexus-400 rounded-full animate-spin" />
@@ -279,7 +329,7 @@ export default function MessageInput({
             <input
               type="file"
               ref={fileInputRef}
-              accept="image/*"
+              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
               className="hidden"
               onChange={handleFileChange}
             />

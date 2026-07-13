@@ -168,10 +168,13 @@ export default function ChatRoomPage() {
     content: string,
     type: string = "text",
     replyToMessageId?: string | null,
-    mediaUrl?: string | null
+    mediaUrl?: string | null,
+    fileNonce?: string | null,
+    version?: string | null,
+    algo?: string | null
   ) {
     if (!conversationId) return;
-    sendMessage(conversationId, content, type, replyToMessageId, mediaUrl);
+    sendMessage(conversationId, content, type, replyToMessageId, mediaUrl, fileNonce, version, algo);
   }
 
   const scrollToMessage = (msgId: string) => {

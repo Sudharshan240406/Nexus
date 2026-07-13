@@ -152,6 +152,11 @@ async def _build_message_out(msg: Message) -> MessageOut:
         is_pinned=bool(getattr(msg, "is_pinned", False)),
         is_forwarded=bool(getattr(msg, "is_forwarded", False)),
         forwarded_from=getattr(msg, "forwarded_from", None),
+        encryption_version=msg.encryption_version,
+        nonce=msg.nonce,
+        message_counter=msg.message_counter,
+        algorithm=msg.algorithm,
+        sender_device_id=msg.sender_device_id,
     )
 
 
@@ -199,6 +204,14 @@ async def enqueue_notification(
         # Determine notification body
         if message_type == "enc_text":
             body = "🔒 Encrypted message"
+        elif message_type == "enc_image":
+            body = "🔒 Encrypted photo"
+        elif message_type == "enc_audio":
+            body = "🔒 Encrypted voice note"
+        elif message_type == "enc_video":
+            body = "🔒 Encrypted video"
+        elif message_type == "enc_document":
+            body = "🔒 Encrypted document"
         elif message_type == "text":
             body = content or ""
         elif message_type == "image":
@@ -1257,6 +1270,12 @@ async def upload_media(
     conversation_id: Optional[str] = Form(None),
     duration: Optional[float] = Form(None),
     reply_to_message_id: Optional[str] = Form(None),
+    encryption_version: Optional[str] = Form(None),
+    nonce: Optional[str] = Form(None),
+    message_counter: Optional[int] = Form(None),
+    algorithm: Optional[str] = Form(None),
+    sender_device_id: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload an image or audio file and return its static URL or audio message details."""
@@ -1322,16 +1341,22 @@ async def upload_media(
                 pass
 
         # Create message in database
+        msg_type_val = "enc_audio" if encryption_version else "audio"
         msg = Message(
             conversation_id=UUID(conversation_id),
             sender_id=UUID(user_id),
-            content=None,
-            message_type="audio",
+            content=content if encryption_version else None,
+            message_type=msg_type_val,
             media_url=media_url,
             reply_to_message_id=reply_to_id,
             duration=int(round(duration)) if duration is not None else 0,
             file_size=file_size,
-            mime_type=mime_type
+            mime_type=mime_type,
+            encryption_version=encryption_version,
+            nonce=nonce,
+            message_counter=message_counter,
+            algorithm=algorithm,
+            sender_device_id=sender_device_id
         )
         db.add(msg)
         await db.flush()
@@ -1383,7 +1408,7 @@ async def upload_media(
             UUID(user_id),
             msg.conversation_id,
             msg.id,
-            "audio",
+            msg.message_type,
             None
         )
 
@@ -1422,7 +1447,7 @@ async def upload_media(
             "id": str(msg.id),
             "media_url": media_url,
             "duration": msg.duration,
-            "message_type": "audio"
+            "message_type": msg.message_type
         }
 
     return {"media_url": media_url}

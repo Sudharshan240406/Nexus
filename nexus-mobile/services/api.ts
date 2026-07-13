@@ -110,31 +110,130 @@ export async function removePushToken(pushToken: string) {
 //  MEDIA UPLOAD
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import {
+  mobileLocalStorage as localStorage,
+  encryptFile,
+  decryptFile,
+  encryptMessageAESGCM,
+  getOrCreateSession,
+  arrayBufferToBase64
+} from "./crypto";
+
 export async function uploadMedia(
   fileUri: string,
   conversationId?: string,
   duration?: number
 ) {
-  const formData = new FormData();
   const filename = fileUri.split("/").pop() || "audio.m4a";
   let ext = filename.split(".").pop()?.toLowerCase() || "m4a";
-  if (!["mp3", "wav", "m4a", "ogg", "webm"].includes(ext)) {
+  if (!["mp3", "wav", "m4a", "ogg", "webm", "png", "jpg", "jpeg", "gif", "pdf", "docx", "mp4"].includes(ext)) {
     ext = "m4a";
   }
-  const name = `audio.${ext}`;
-  const type = `audio/${ext === "mp3" ? "mpeg" : ext}`;
+  const name = `file.${ext}`;
+  const isImage = ["png", "jpg", "jpeg", "gif"].includes(ext);
+  const isAudio = ["mp3", "wav", "m4a", "ogg", "webm"].includes(ext);
+  const isVideo = ["mp4"].includes(ext);
+  const type = isImage ? `image/${ext === "jpg" ? "jpeg" : ext}` :
+               isAudio ? `audio/${ext === "mp3" ? "mpeg" : ext}` :
+               isVideo ? "video/mp4" : "application/octet-stream";
 
-  formData.append("file", {
+  const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
+  const isE2EE = !!myDeviceIdStr && !!conversationId;
+
+  let fileToUpload: Blob | { uri: string; name: string; type: string } = {
     uri: fileUri,
     name: name,
     type: type,
-  } as any);
+  };
+  let envelopeJson: string | null = null;
+  let fileNonce: string | null = null;
+  let algo: string | null = null;
+  let version: string | null = null;
+
+  if (isE2EE && conversationId) {
+    // Fetch conversation participants
+    const conversation = await request<Conversation>(`/conversations/${conversationId}`);
+    const participants = conversation.participants || [];
+
+    // Fetch original file bytes from uri
+    const fileRes = await fetch(fileUri);
+    const fileBlob = await fileRes.blob();
+    const fileData = await fileBlob.arrayBuffer();
+
+    const encResult = await encryptFile(fileData);
+    fileNonce = encResult.ivB64;
+    algo = encResult.algo;
+    version = "1";
+
+    const fileToUploadBlob = new Blob([encResult.ciphertext], { type: "application/octet-stream" });
+
+    // Prepare E2EE keys map
+    const keysMap: Record<string, { enc_key: string; nonce: string; algo: string }> = {};
+
+    for (const p of participants) {
+      const peerId = p.user_id;
+      const bundle = await fetchUserKeys(peerId);
+      for (const dev of bundle.devices) {
+        const session = await getOrCreateSession(peerId, dev.device_id_str, dev.device_id);
+        if (!session) continue;
+
+        const keyEncBytes = await encryptMessageAESGCM(encResult.keyB64, session.sharedSecret);
+        keysMap[dev.device_id_str] = {
+          enc_key: keyEncBytes.ciphertext,
+          nonce: keyEncBytes.nonce,
+          algo: "AES-GCM-256",
+        };
+      }
+    }
+
+    // Encrypt the file metadata
+    const metadataPlain = {
+      file_name: filename,
+      mime_type: type,
+      file_size: fileBlob.size,
+      duration,
+    };
+    const metaEncBytes = await encryptMessageAESGCM(JSON.stringify(metadataPlain), encResult.keyB64);
+
+    const envelope = {
+      encrypted_metadata: metaEncBytes.ciphertext,
+      metadata_nonce: metaEncBytes.nonce,
+      file_nonce: fileNonce,
+      keys: keysMap,
+    };
+
+    envelopeJson = JSON.stringify(envelope);
+
+    if (typeof document !== "undefined") {
+      fileToUpload = fileToUploadBlob;
+    } else {
+      const base64Cipher = arrayBufferToBase64(encResult.ciphertext);
+      fileToUpload = {
+        uri: `data:application/octet-stream;base64,${base64Cipher}`,
+        name: name,
+        type: "application/octet-stream",
+      } as any;
+    }
+  }
+
+  const formData = new FormData();
+  formData.append("file", fileToUpload as any, name);
 
   if (conversationId) {
     formData.append("conversation_id", conversationId);
   }
   if (duration !== undefined) {
     formData.append("duration", String(duration));
+  }
+
+  // Append E2EE form fields
+  if (envelopeJson) {
+    formData.append("encryption_version", version || "1");
+    formData.append("nonce", fileNonce || "");
+    formData.append("message_counter", String(Math.floor(Date.now() / 1000)));
+    formData.append("algorithm", algo || "AES-GCM-256");
+    formData.append("sender_device_id", myDeviceIdStr);
+    formData.append("content", envelopeJson);
   }
 
   const token = useAuthStore.getState().token;
@@ -159,7 +258,40 @@ export async function uploadMedia(
     media_url: string;
     duration: number;
     message_type: string;
+    file_nonce?: string | null;
+    encryption_version?: string | null;
+    algorithm?: string | null;
   }>;
+}
+
+export async function downloadAndDecryptFile(
+  mediaUrl: string,
+  keyB64: string,
+  ivB64: string,
+  algo: string,
+  mimeType: string
+): Promise<string> {
+  const token = useAuthStore.getState().token;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_URL}${mediaUrl}`, { headers });
+  if (!res.ok) {
+    throw new Error(`Failed to download attachment: ${res.status}`);
+  }
+
+  const ciphertext = await res.arrayBuffer();
+  const decrypted = await decryptFile(ciphertext, keyB64, ivB64, algo);
+
+  if (typeof URL !== "undefined" && URL.createObjectURL) {
+    const blob = new Blob([decrypted], { type: mimeType });
+    return URL.createObjectURL(blob);
+  } else {
+    const base64 = arrayBufferToBase64(decrypted);
+    return `data:${mimeType};base64,${base64}`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

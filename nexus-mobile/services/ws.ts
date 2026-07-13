@@ -130,12 +130,20 @@ import {
 import { fetchUserKeys } from "./api";
 
 export async function decryptMessageInPlace(msg: any): Promise<void> {
-  if (msg.message_type !== "enc_text" || !msg.content) return;
+  const isE2EEMedia = ["enc_image", "enc_audio", "enc_video", "enc_document"].includes(msg.message_type);
+  if (msg.message_type !== "enc_text" && !isE2EEMedia) return;
+  if (!msg.content) return;
 
   try {
     const payload = JSON.parse(msg.content);
-    if (!payload.ciphertext || !payload.keys) {
-      throw new Error("Invalid E2EE format");
+    if (isE2EEMedia) {
+      if (!payload.encrypted_metadata || !payload.keys) {
+        throw new Error("Invalid E2EE format");
+      }
+    } else {
+      if (!payload.ciphertext || !payload.keys) {
+        throw new Error("Invalid E2EE format");
+      }
     }
 
     const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
@@ -171,21 +179,44 @@ export async function decryptMessageInPlace(msg: any): Promise<void> {
       throw new Error("No secure session established");
     }
 
-    const K_msg = await decryptMessageAESGCM(
+    const decryptedKey = await decryptMessageAESGCM(
       keyEntry.enc_key,
       keyEntry.nonce,
       session.sharedSecret,
       keyEntry.algo
     );
 
-    const plaintext = await decryptMessageAESGCM(
-      payload.ciphertext,
-      msg.nonce,
-      K_msg,
-      msg.algorithm
-    );
+    if (isE2EEMedia) {
+      if (!payload.encrypted_metadata || !payload.metadata_nonce) {
+        throw new Error("Missing encrypted metadata payload");
+      }
+      const metadataPlain = await decryptMessageAESGCM(
+        payload.encrypted_metadata,
+        payload.metadata_nonce,
+        decryptedKey,
+        msg.algorithm
+      );
+      const metadata = JSON.parse(metadataPlain);
 
-    msg.content = plaintext;
+      msg.content = metadata.caption || null;
+      msg.file_name = metadata.file_name;
+      msg.mime_type = metadata.mime_type;
+      msg.file_size = metadata.file_size;
+      msg.duration = metadata.duration;
+      msg.waveform = metadata.waveform;
+
+      msg.decrypted_key = decryptedKey;
+      msg.file_nonce = payload.file_nonce;
+      msg.decrypted_algo = msg.algorithm;
+    } else {
+      const plaintext = await decryptMessageAESGCM(
+        payload.ciphertext,
+        msg.nonce,
+        decryptedKey,
+        msg.algorithm
+      );
+      msg.content = plaintext;
+    }
   } catch (err: any) {
     console.error("[Nexus WS] Decryption failed:", err);
     msg.content = `🔒 Decryption failed: ${err.message || err}`;
@@ -250,10 +281,34 @@ export async function sendMessage(
   messageType: string = "text",
   replyToMessageId?: string | null,
   mediaUrl?: string | null,
-  duration?: number | null
+  duration?: number | null,
+  fileNonce?: string | null,
+  version?: string | null,
+  algo?: string | null
 ): Promise<void> {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     console.error("[Nexus WS] Not connected");
+    return;
+  }
+
+  const isE2EEMedia = ["enc_image", "enc_audio", "enc_video", "enc_document"].includes(messageType);
+  if (isE2EEMedia) {
+    const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
+    socket.send(
+      JSON.stringify({
+        conversation_id: conversationId,
+        content,
+        message_type: messageType,
+        reply_to_message_id: replyToMessageId || null,
+        media_url: mediaUrl || null,
+        duration: duration || null,
+        encryption_version: version || "1",
+        nonce: fileNonce || "",
+        message_counter: Math.floor(Date.now() / 1000),
+        algorithm: algo || "AES-GCM-256",
+        sender_device_id: myDeviceIdStr
+      })
+    );
     return;
   }
 

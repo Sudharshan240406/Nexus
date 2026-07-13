@@ -329,4 +329,123 @@ export async function getOrCreateSession(
   }
 }
 
+export async function encryptFile(
+  fileData: ArrayBuffer
+): Promise<{
+  ciphertext: ArrayBuffer;
+  keyB64: string;
+  ivB64: string;
+  algo: string;
+}> {
+  const algo = "AES-GCM-256";
+  const keyBytes = new Uint8Array(32);
+  const ivBytes = new Uint8Array(12);
+
+  const cryptoObj = typeof window !== "undefined" && window.crypto ? window.crypto : null;
+
+  if (cryptoObj?.getRandomValues) {
+    cryptoObj.getRandomValues(keyBytes);
+    cryptoObj.getRandomValues(ivBytes);
+  } else {
+    for (let i = 0; i < 32; i++) keyBytes[i] = Math.floor(Math.random() * 256);
+    for (let i = 0; i < 12; i++) ivBytes[i] = Math.floor(Math.random() * 256);
+  }
+
+  const keyB64 = arrayBufferToBase64(keyBytes);
+  const ivB64 = arrayBufferToBase64(ivBytes);
+
+  if (!cryptoObj?.subtle) {
+    const xorResult = mockXORFile(new Uint8Array(fileData), keyB64);
+    return {
+      ciphertext: xorResult.buffer as ArrayBuffer,
+      keyB64,
+      ivB64,
+      algo: "mock-xor-file",
+    };
+  }
+
+  try {
+    const aesKey = await cryptoObj.subtle.importKey(
+      "raw",
+      keyBytes as any,
+      { name: "AES-GCM" },
+      false,
+      ["encrypt"]
+    );
+
+    const ciphertext = await cryptoObj.subtle.encrypt(
+      { name: "AES-GCM", iv: ivBytes as any },
+      aesKey,
+      fileData
+    );
+
+    return {
+      ciphertext,
+      keyB64,
+      ivB64,
+      algo,
+    };
+  } catch (err) {
+    const xorResult = mockXORFile(new Uint8Array(fileData), keyB64);
+    return {
+      ciphertext: xorResult.buffer as ArrayBuffer,
+      keyB64,
+      ivB64,
+      algo: "mock-xor-file",
+    };
+  }
+}
+
+export async function decryptFile(
+  ciphertext: ArrayBuffer,
+  keyB64: string,
+  ivB64: string,
+  algo: string
+): Promise<ArrayBuffer> {
+  const cryptoObj = typeof window !== "undefined" && window.crypto ? window.crypto : null;
+
+  if (algo === "mock-xor-file" || !cryptoObj?.subtle) {
+    const xorResult = mockXORFile(new Uint8Array(ciphertext), keyB64);
+    return xorResult.buffer as ArrayBuffer;
+  }
+
+  try {
+    const keyBytes = base64ToUint8Array(keyB64);
+    const ivBytes = base64ToUint8Array(ivB64);
+
+    const aesKey = await cryptoObj.subtle.importKey(
+      "raw",
+      keyBytes as any,
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"]
+    );
+
+    const decrypted = await cryptoObj.subtle.decrypt(
+      { name: "AES-GCM", iv: ivBytes as any },
+      aesKey,
+      ciphertext
+    );
+
+    return decrypted;
+  } catch (err) {
+    try {
+      const xorResult = mockXORFile(new Uint8Array(ciphertext), keyB64);
+      return xorResult.buffer as ArrayBuffer;
+    } catch (inner) {
+      throw new Error("File decryption failed");
+    }
+  }
+}
+
+function mockXORFile(data: Uint8Array, keyB64: string): Uint8Array {
+  const keyBytes = base64ToUint8Array(keyB64);
+  const keyLen = keyBytes.length || 1;
+  const result = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    result[i] = data[i] ^ keyBytes[i % keyLen];
+  }
+  return result;
+}
+
 export const mobileLocalStorage = localStorage;

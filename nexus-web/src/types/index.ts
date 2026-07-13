@@ -70,6 +70,16 @@ export interface Message {
   is_pinned?: boolean;
   is_forwarded?: boolean;
   forwarded_from?: string | null;
+  encryption_version?: string | null;
+  nonce?: string | null;
+  message_counter?: number | null;
+  algorithm?: string | null;
+  sender_device_id?: string | null;
+  file_name?: string | null;
+  file_nonce?: string | null;
+  decrypted_key?: string | null;
+  decrypted_algo?: string | null;
+  waveform?: number[] | null;
 }
 
 /* ─── WebSocket Events ────────────────────────────────────────────────────── */

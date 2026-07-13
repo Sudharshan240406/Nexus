@@ -165,14 +165,109 @@ export async function verifyPin(pin: string) {
   });
 }
 
+export interface EncryptedAttachmentResult {
+  encryptedFile: File;
+  contentEnvelope: string;
+  fileNonce: string;
+  algorithm: string;
+  version: string;
+}
+
+export async function prepareEncryptedAttachment(
+  file: File,
+  conversationId: string,
+  extraMetadata?: Record<string, any>
+): Promise<EncryptedAttachmentResult> {
+  const fileData = await file.arrayBuffer();
+  
+  const { encryptFile, encryptMessageAESGCM, getOrCreateSession } = await import("./crypto");
+  const encResult = await encryptFile(fileData);
+
+  const metadataPlain = {
+    file_name: file.name,
+    mime_type: file.type,
+    file_size: file.size,
+    ...extraMetadata
+  };
+  const metadataEncResult = await encryptMessageAESGCM(JSON.stringify(metadataPlain), encResult.keyB64);
+
+  const { useConversationStore } = await import("../stores/conversationStore");
+  const store = useConversationStore.getState();
+  const conversation = store.conversations.find(c => c.id === conversationId);
+  const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
+
+  const keysMap: Record<string, any> = {};
+
+  if (conversation && myDeviceIdStr) {
+    for (const p of conversation.participants) {
+      const bundle = await fetchUserKeys(p.user_id);
+      
+      for (const d of bundle.devices) {
+        const session = await getOrCreateSession(p.user_id, d.device_id_str, d.device_id);
+        if (session) {
+          const encKeyResult = await encryptMessageAESGCM(encResult.keyB64, session.sharedSecret);
+          session.lastSentCounter += 1;
+          localStorage.setItem(`nexus_session_${d.device_id_str}`, JSON.stringify(session));
+
+          keysMap[d.device_id_str] = {
+            enc_key: encKeyResult.ciphertext,
+            nonce: encKeyResult.nonce,
+            algo: encKeyResult.algorithm
+          };
+        }
+      }
+    }
+  }
+
+  const envelope = {
+    encrypted_metadata: metadataEncResult.ciphertext,
+    metadata_nonce: metadataEncResult.nonce,
+    file_nonce: encResult.ivB64,
+    keys: keysMap
+  };
+
+  const encFile = new File([encResult.ciphertext], file.name, { type: file.type });
+
+  return {
+    encryptedFile: encFile,
+    contentEnvelope: JSON.stringify(envelope),
+    fileNonce: encResult.ivB64,
+    algorithm: encResult.algo,
+    version: "1"
+  };
+}
+
 export async function uploadMedia(
   file: File,
   conversationId?: string,
   duration?: number,
-  replyToMessageId?: string | null
+  replyToMessageId?: string | null,
+  waveform?: number[]
 ) {
+  const myDeviceIdStr = localStorage.getItem("nexus_device_id_str") || "";
+  const isE2EE = !!myDeviceIdStr && !!conversationId;
+
+  let fileToUpload = file;
+  let envelopeJson: string | null = null;
+  let fileNonce: string | null = null;
+  let algo: string | null = null;
+  let version: string | null = null;
+
+  if (isE2EE && conversationId) {
+    const extraMeta: Record<string, any> = {};
+    if (duration !== undefined) extraMeta.duration = duration;
+    if (waveform) extraMeta.waveform = waveform;
+
+    const prepared = await prepareEncryptedAttachment(file, conversationId, extraMeta);
+    fileToUpload = prepared.encryptedFile;
+    envelopeJson = prepared.contentEnvelope;
+    fileNonce = prepared.fileNonce;
+    algo = prepared.algorithm;
+    version = prepared.version;
+  }
+
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", fileToUpload);
   if (conversationId) {
     formData.append("conversation_id", conversationId);
   }
@@ -181,6 +276,15 @@ export async function uploadMedia(
   }
   if (replyToMessageId) {
     formData.append("reply_to_message_id", replyToMessageId);
+  }
+
+  if (isE2EE && envelopeJson && fileNonce && algo && version) {
+    formData.append("encryption_version", version);
+    formData.append("nonce", fileNonce);
+    formData.append("message_counter", String(Math.floor(Date.now() / 1000)));
+    formData.append("algorithm", algo);
+    formData.append("sender_device_id", myDeviceIdStr);
+    formData.append("content", envelopeJson);
   }
 
   const token = useAuthStore.getState().token;
@@ -202,7 +306,52 @@ export async function uploadMedia(
     throw new Error(body.detail || `Upload error: ${res.status}`);
   }
 
-  return res.json() as Promise<{ id: string; media_url: string; duration: number; message_type: string }>;
+  const resJson = await res.json();
+  return {
+    ...resJson,
+    envelopeJson,
+    fileNonce,
+    algo,
+    version
+  } as {
+    id: string;
+    media_url: string;
+    duration: number;
+    message_type: string;
+    envelopeJson: string | null;
+    fileNonce: string | null;
+    algo: string | null;
+    version: string | null;
+  };
+}
+
+export async function downloadAndDecryptFile(
+  mediaUrl: string,
+  keyB64: string,
+  ivB64: string,
+  algo: string,
+  mimeType: string
+): Promise<string> {
+  const token = useAuthStore.getState().token;
+  const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const url = mediaUrl.startsWith("http") ? mediaUrl : `${BASE_URL}${mediaUrl}`;
+
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error(`Failed to download encrypted attachment: ${res.status}`);
+  }
+
+  const ciphertext = await res.arrayBuffer();
+  const { decryptFile } = await import("./crypto");
+  const decrypted = await decryptFile(ciphertext, keyB64, ivB64, algo);
+
+  const blob = new Blob([decrypted], { type: mimeType });
+  return URL.createObjectURL(blob);
 }
 
 export async function addGroupMember(conversationId: string, userId: string) {

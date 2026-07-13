@@ -16,6 +16,7 @@ import { Colors, Spacing, BorderRadius, FontSize } from "../constants/theme";
 import { sendTypingEvent } from "../services/ws";
 import { Audio } from "expo-av";
 import { uploadMedia } from "../services/api";
+import * as ImagePicker from "expo-image-picker";
 
 interface MessageInputProps {
   conversationId: string;
@@ -273,6 +274,33 @@ export default function MessageInput({
     }
   };
 
+  const handlePickImage = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Permission Denied", "Library access is required to attach images.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const selectedUri = result.assets[0].uri;
+        setUploading(true);
+        await uploadMedia(selectedUri, conversationId);
+      }
+    } catch (err: any) {
+      console.error("Failed to pick image:", err);
+      Alert.alert("Failed to pick image", err.message || "An error occurred.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -398,6 +426,13 @@ export default function MessageInput({
 
   return (
     <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.attachBtn}
+        onPress={handlePickImage}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="attach-outline" size={24} color={Colors.dark[200]} />
+      </TouchableOpacity>
       <View style={styles.inputWrap}>
         <TextInput
           ref={inputRef}
@@ -572,5 +607,13 @@ const styles = StyleSheet.create({
     color: Colors.dark[300],
     fontSize: FontSize.xs,
     fontVariant: ["tabular-nums"],
+  },
+  attachBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
   },
 });
